@@ -155,7 +155,7 @@ class Pool extends EventEmitter {
   private connectNode = async ({ addresses, nodePubKey }: NodeConnectionInfo) => {
     for (let n = 0; n < addresses.length; n += 1) {
       try {
-        await this.addOutbound(addresses[n], nodePubKey);
+        await this.addOutbound(addresses[n], nodePubKey, true);
         break; // once we've successfully established an outbound connection, stop attempting new connections
       } catch (err) {
         this.logger.info(err);
@@ -170,7 +170,7 @@ class Pool extends EventEmitter {
    * @param nodePubKey the nodePubKey of the node to connect to
    * @returns the connected peer
    */
-  public addOutbound = async (address: Address, nodePubKey: string): Promise<Peer> => {
+  public addOutbound = async (address: Address, nodePubKey: string, retryConnecting: boolean): Promise<Peer> => {
     if (nodePubKey === this.handshakeData.nodePubKey) {
       const err = errors.ATTEMPTED_CONNECTION_TO_SELF;
       this.logger.warn(err.message);
@@ -182,7 +182,7 @@ class Pool extends EventEmitter {
     }
 
     const peer = Peer.fromOutbound(address, this.logger);
-    await this.tryOpenPeer(peer, nodePubKey);
+    await this.tryOpenPeer(peer, nodePubKey, retryConnecting);
     return peer;
   }
 
@@ -196,17 +196,17 @@ class Pool extends EventEmitter {
     return peerInfos;
   }
 
-  private tryOpenPeer = async (peer: Peer, nodePubKey?: string): Promise<void> => {
+  private tryOpenPeer = async (peer: Peer, nodePubKey?: string, retryConnecting?: boolean): Promise<void> => {
     try {
-      await this.openPeer(peer, nodePubKey);
+      await this.openPeer(peer, nodePubKey, retryConnecting);
     } catch (err) {
       this.logger.warn(`error while opening connection to peer ${nodePubKey}: ${err.message}`);
     }
   }
 
-  private openPeer = async (peer: Peer, nodePubKey?: string): Promise<void> => {
+  private openPeer = async (peer: Peer, nodePubKey?: string, retryConnecting?: boolean): Promise<void> => {
     this.bindPeer(peer);
-    await peer.open(this.handshakeData, nodePubKey);
+    await peer.open(this.handshakeData, nodePubKey, retryConnecting);
   }
 
   public closePeer = async (nodePubKey: string): Promise<void> => {

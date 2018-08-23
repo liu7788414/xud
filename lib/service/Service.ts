@@ -118,7 +118,7 @@ class Service extends EventEmitter {
     argChecks.HAS_NODE_PUB_KEY({ nodePubKey });
     argChecks.HAS_HOST({ host });
     argChecks.VALID_PORT({ port });
-    const peer = await this.pool.addOutbound({ host, port }, nodePubKey);
+    const peer = await this.pool.addOutbound({ host, port }, nodePubKey, false);
     return peer.getStatus();
   }
 

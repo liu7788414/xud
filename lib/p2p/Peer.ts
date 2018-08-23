@@ -39,7 +39,6 @@ interface Peer {
 
 /** Represents a remote XU peer */
 class Peer extends EventEmitter {
-  // TODO: properties documentation
   public socketAddress!: Address;
   public inbound!: boolean;
   public connected = false;
@@ -62,10 +61,16 @@ class Peer extends EventEmitter {
   private static STALL_INTERVAL = 5000;
   /** Interval for pinging peers. */
   private static PING_INTERVAL = 30000;
-  /** Socket connection timeout for outbound peers. */
-  private static CONNECTION_TIMEOUT = 10000;
   /** Response timeout for response packets. */
   private static RESPONSE_TIMEOUT = 10000;
+  /** Socket connection timeout for outbound peers. */
+  private static CONNECTION_TIMEOUT = 10000;
+  /** Connection retries min delay. */
+  private static CONNECTION_RETRIES_MIN_DELAY = 5000;
+  /** Connection retries max delay. */
+  private static CONNECTION_RETIES_MAX_DELAY = 3600000;
+  /** Connection retries max period. */
+  private static CONNECTION_RETIES_MAX_PERIOD = 3600000;
 
   public get nodePubKey(): string | undefined {
     return this.handshakeState ? this.handshakeState.nodePubKey : undefined;
@@ -122,14 +127,15 @@ class Peer extends EventEmitter {
    * and emit the `open` event if everything succeeds. Throw an error on unexpected handshake data.
    * @param handshakeData our handshake data to send to the peer
    * @param nodePubKey the expected nodePubKey of the node we are opening a connection with
+   * @param retryConnecting whether to retry to connect upon failure
    */
-  public open = async (handshakeData: HandshakeState, nodePubKey?: string): Promise<void> => {
+  public open = async (handshakeData: HandshakeState, nodePubKey?: string, retryConnecting?: boolean): Promise<void> => {
     assert(!this.opened);
     assert(!this.closed);
 
     this.opened = true;
 
-    await this.initConnection();
+    await this.initConnection(retryConnecting);
     this.initStall();
     await this.initHello(handshakeData);
 
@@ -228,7 +234,7 @@ class Peer extends EventEmitter {
    * Ensure we are connected (for inbound connections) or listen for the `connect` socket event (for outbound connections)
    * and set the [[connectTime]] timestamp. If an outbound connection attempt errors or times out, throw an error.
    */
-  private initConnection = (): Promise<void> => {
+  private initConnection = (retry?: boolean): Promise<void> => {
     assert(this.socket);
 
     if (this.connected) {
@@ -239,6 +245,10 @@ class Peer extends EventEmitter {
     }
 
     return new Promise((resolve, reject) => {
+      const startTime = Date.now();
+      let retryDelay: number | undefined;
+      let retries = 0;
+
       const cleanup = () => {
         if (this.connectTimeout) {
           clearTimeout(this.connectTimeout);
@@ -248,11 +258,6 @@ class Peer extends EventEmitter {
           this.socket.removeListener('error', onError);
           this.socket.removeListener('connect', onConnect);
         }
-      };
-
-      const onError = (err: Error) => {
-        cleanup();
-        reject(err);
       };
 
       const onConnect = () => {
@@ -265,16 +270,45 @@ class Peer extends EventEmitter {
         resolve();
       };
 
-      const onTimeout = () => {
+      const onError = (err: Error) => {
         cleanup();
-        reject(new Error('Connection timed out.'));
+
+        if (!retry) {
+          this.close();
+          reject(err);
+          return;
+        }
+
+        retryDelay = !retryDelay
+          ? Peer.CONNECTION_RETRIES_MIN_DELAY
+          : Math.min(Peer.CONNECTION_RETIES_MAX_DELAY, retryDelay * 2);
+
+        if (Date.now() - startTime + retryDelay > Peer.CONNECTION_RETIES_MAX_PERIOD) {
+          this.close();
+          reject(new Error(`${retries} connection retries failed`));
+          this.emit('ban');
+          return;
+        }
+
+        this.logger.warn(
+          `Connection attempt #${retries + 1} to peer (${addressUtils.toString(this.socketAddress)}) ` +
+          `failed: ${err.message}. retrying in ${retryDelay / 1000} sec...`,
+        );
+
+        setTimeout(() => {
+          retries = retries + 1;
+          this.socket!.connect({ port: this.socketAddress.port, host: this.socketAddress.host });
+          listen();
+        }, retryDelay);
       };
 
-      this.socket!.once('connect', onConnect);
+      const listen = () => {
+        this.socket!.once('connect', onConnect);
+        this.socket!.once('error', onError);
+        this.connectTimeout = setTimeout(() => onError(new Error('Connection timed out')), Peer.CONNECTION_TIMEOUT);
+      };
 
-      this.socket!.once('error', onError);
-
-      this.connectTimeout = setTimeout(onTimeout, Peer.CONNECTION_TIMEOUT);
+      listen();
     });
   }
 
@@ -388,7 +422,6 @@ class Peer extends EventEmitter {
 
     this.socketAddress = address;
     this.inbound = false;
-    this.connected = false;
 
     this.bindSocket(socket);
   }
@@ -428,8 +461,8 @@ class Peer extends EventEmitter {
         } else {
           this.logger.info(`Peer ${this.nodePubKey} socket closed`);
         }
+        this.close();
       }
-      this.close();
     });
 
     this.socket.on('data', (data) => {
