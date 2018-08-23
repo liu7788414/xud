@@ -70,7 +70,7 @@ class Peer extends EventEmitter {
   /** Connection retries max delay. */
   private static CONNECTION_RETIES_MAX_DELAY = 3600000;
   /** Connection retries max period. */
-  private static CONNECTION_RETIES_MAX_PERIOD = 3600000;
+  private static CONNECTION_RETIES_MAX_PERIOD = 604800000;
 
   public get nodePubKey(): string | undefined {
     return this.handshakeState ? this.handshakeState.nodePubKey : undefined;
