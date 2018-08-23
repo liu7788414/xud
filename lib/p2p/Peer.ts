@@ -422,6 +422,7 @@ class Peer extends EventEmitter {
 
     this.socketAddress = address;
     this.inbound = false;
+    this.connected = false;
 
     this.bindSocket(socket);
   }
