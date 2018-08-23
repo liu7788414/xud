@@ -290,7 +290,7 @@ class Peer extends EventEmitter {
           return;
         }
 
-        this.logger.warn(
+        this.logger.info(
           `Connection attempt #${retries + 1} to peer (${addressUtils.toString(this.socketAddress)}) ` +
           `failed: ${err.message}. retrying in ${retryDelay / 1000} sec...`,
         );
