@@ -68,9 +68,9 @@ class Peer extends EventEmitter {
   /** Connection retries min delay. */
   private static CONNECTION_RETRIES_MIN_DELAY = 5000;
   /** Connection retries max delay. */
-  private static CONNECTION_RETIES_MAX_DELAY = 3600000;
+  private static CONNECTION_RETRIES_MAX_DELAY = 3600000;
   /** Connection retries max period. */
-  private static CONNECTION_RETIES_MAX_PERIOD = 604800000;
+  private static CONNECTION_RETRIES_MAX_PERIOD = 604800000;
 
   public get nodePubKey(): string | undefined {
     return this.handshakeState ? this.handshakeState.nodePubKey : undefined;
@@ -246,7 +246,7 @@ class Peer extends EventEmitter {
 
     return new Promise((resolve, reject) => {
       const startTime = Date.now();
-      let retryDelay: number | undefined;
+      let retryDelay = Peer.CONNECTION_RETRIES_MIN_DELAY;
       let retries = 0;
 
       const cleanup = () => {
@@ -279,36 +279,33 @@ class Peer extends EventEmitter {
           return;
         }
 
-        retryDelay = !retryDelay
-          ? Peer.CONNECTION_RETRIES_MIN_DELAY
-          : Math.min(Peer.CONNECTION_RETIES_MAX_DELAY, retryDelay * 2);
-
-        if (Date.now() - startTime + retryDelay > Peer.CONNECTION_RETIES_MAX_PERIOD) {
+        if (Date.now() - startTime + retryDelay > Peer.CONNECTION_RETRIES_MAX_PERIOD) {
           this.close();
           reject(new Error(`${retries} connection retries failed`));
           this.emit('ban');
           return;
         }
 
-        this.logger.info(
+        this.logger.debug(
           `Connection attempt #${retries + 1} to peer (${addressUtils.toString(this.socketAddress)}) ` +
           `failed: ${err.message}. retrying in ${retryDelay / 1000} sec...`,
         );
 
         setTimeout(() => {
+          retryDelay = Math.min(Peer.CONNECTION_RETRIES_MAX_DELAY, retryDelay * 2);
           retries = retries + 1;
           this.socket!.connect({ port: this.socketAddress.port, host: this.socketAddress.host });
-          listen();
+          bind();
         }, retryDelay);
       };
 
-      const listen = () => {
+      const bind = () => {
         this.socket!.once('connect', onConnect);
         this.socket!.once('error', onError);
         this.connectTimeout = setTimeout(() => onError(new Error('Connection timed out')), Peer.CONNECTION_TIMEOUT);
       };
 
-      listen();
+      bind();
     });
   }
 
