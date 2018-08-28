@@ -11,6 +11,7 @@ import { OutgoingOrder, OrderIdentifier, StampedPeerOrder } from '../types/order
 import { Models } from '../db/DB';
 import Logger from '../Logger';
 import { HandshakeState, Address, NodeConnectionInfo } from '../types/p2p';
+import { NodeInstance } from '../types/db';
 import addressUtils from '../utils/addressUtils';
 import SwapDeals, { SwapDeal } from '../orderbook/SwapDeals';
 import { getExternalIp } from '../utils/utils';
@@ -38,7 +39,7 @@ interface Pool {
 
 /** An interface for an object with a `forEach` method that iterates over [[NodeConnectionInfo]] objects. */
 interface NodeConnectionIterator {
-  forEach: (callback: (node: NodeConnectionInfo) => void) => void;
+  forEach: (callback: (node: NodeInstance | NodeConnectionInfo) => void) => void;
 }
 
 /** A class representing a pool of peers that handles network activity. */
@@ -160,15 +161,25 @@ class Pool extends EventEmitter {
   /**
    * Attempt to create an outbound connection to a node using its known listening addresses.
    */
-  private connectNode = async ({ addresses, nodePubKey }: NodeConnectionInfo) => {
+  private connectNode = async (node:  NodeInstance | NodeConnectionInfo) => {
+    const { addresses, nodePubKey } = node;
     for (let n = 0; n < addresses.length; n += 1) {
       try {
-        await this.addOutbound(addresses[n], nodePubKey, true);
-        break; // once we've successfully established an outbound connection, stop attempting new connections
+        await this.addOutbound(addresses[n], nodePubKey, false);
+        return; // once we've successfully established an outbound connection, stop attempting new connections
       } catch (err) {
         this.logger.info(err);
       }
     }
+
+    // if it's a node instance, and so a previously successfully connected with node, then attempt to retry connecting on the first address
+    if(this.isNodeInstance(node)) {
+      await this.addOutbound(addresses[0], nodePubKey, true);
+    }
+  }
+
+  private isNodeInstance(node: NodeInstance | NodeConnectionInfo): node is NodeInstance {
+    return (<NodeInstance>node).id !== undefined;
   }
 
   /**
