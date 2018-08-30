@@ -1,6 +1,7 @@
+import assert from 'assert';
 import net, { Server, Socket } from 'net';
 import { EventEmitter } from 'events';
-import errors from './errors';
+import errors, { errorCodes } from './errors';
 import Peer, { PeerInfo } from './Peer';
 import NodeList from './NodeList';
 import PeerList from './PeerList';
@@ -109,7 +110,7 @@ class Pool extends EventEmitter {
 
     this.logger.info('Connecting to known / previously connected peers');
     await this.nodes.load();
-    this.connectNodes(this.nodes).then(() => {
+    this.connectNodes(this.nodes, false, true).then(() => {
       this.logger.info('Completed start-up connections to known peers.');
     }).catch((reason) => {
       this.logger.error('Unexpected error connecting to known peers on startup', reason);
@@ -145,14 +146,14 @@ class Pool extends EventEmitter {
    * @param ignoreKnown whether to ignore nodes we are already aware of, defaults to false
    * @returns a promise that will resolve when all outbound connections resolve
    */
-  private connectNodes = (nodes: NodeConnectionIterator, ignoreKnown = false) => {
+  private connectNodes = (nodes: NodeConnectionIterator, ignoreKnown?: boolean, retryConnecting?: boolean) => {
     const connectionPromises: Promise<void>[] = [];
     nodes.forEach((node) => {
       // check that this node is not ourselves, that it has listening addresses,
       // and that either we haven't heard of it, or we're not ignoring known nodes and it's not banned
       if (node.nodePubKey !== this.handshakeData.nodePubKey && node.addresses.length > 0 &&
         (!this.nodes.has(node.nodePubKey) || (!ignoreKnown && !this.nodes.isBanned(node.nodePubKey)))) {
-        connectionPromises.push(this.connectNode(node));
+        connectionPromises.push(this.tryConnectNode(node, retryConnecting));
       }
     });
     return Promise.all(connectionPromises);
@@ -161,25 +162,23 @@ class Pool extends EventEmitter {
   /**
    * Attempt to create an outbound connection to a node using its known listening addresses.
    */
-  private connectNode = async (node:  NodeInstance | NodeConnectionInfo) => {
+  private tryConnectNode = async (node: NodeInstance | NodeConnectionInfo, retryConnecting?: boolean) => {
     const { addresses, nodePubKey } = node;
     for (let n = 0; n < addresses.length; n += 1) {
       try {
         await this.addOutbound(addresses[n], nodePubKey, false);
         return; // once we've successfully established an outbound connection, stop attempting new connections
-      } catch (err) {
-        this.logger.info(err);
+      } catch (err) {}
+    }
+
+    if (retryConnecting) {
+      const index = addressUtils.getLatestConnectedAddressIndex(addresses);
+      if (index > -1) {
+        try {
+          await this.addOutbound(addresses[index], nodePubKey, true);
+        } catch (err) {}
       }
     }
-
-    // if it's a node instance, and so a previously successfully connected with node, then attempt to retry connecting on the first address
-    if(this.isNodeInstance(node)) {
-      await this.addOutbound(addresses[0], nodePubKey, true);
-    }
-  }
-
-  private isNodeInstance(node: NodeInstance | NodeConnectionInfo): node is NodeInstance {
-    return (<NodeInstance>node).id !== undefined;
   }
 
   /**
@@ -200,7 +199,7 @@ class Pool extends EventEmitter {
     }
 
     const peer = Peer.fromOutbound(address, this.logger);
-    await this.tryOpenPeer(peer, nodePubKey, retryConnecting);
+    await this.openPeer(peer, nodePubKey, retryConnecting);
     return peer;
   }
 
@@ -217,14 +216,24 @@ class Pool extends EventEmitter {
   private tryOpenPeer = async (peer: Peer, nodePubKey?: string, retryConnecting?: boolean): Promise<void> => {
     try {
       await this.openPeer(peer, nodePubKey, retryConnecting);
-    } catch (err) {
-      this.logger.warn(`error while opening connection to peer ${nodePubKey}: ${err.message}`);
-    }
+    } catch (err) {}
   }
 
   private openPeer = async (peer: Peer, nodePubKey?: string, retryConnecting?: boolean): Promise<void> => {
     this.bindPeer(peer);
-    await peer.open(this.handshakeData, nodePubKey, retryConnecting);
+    try {
+      await peer.open(this.handshakeData, nodePubKey, retryConnecting);
+    } catch (err) {
+      // we don't have `nodePubKey` for inbound connections, which might fail on handshake
+      const id = nodePubKey || addressUtils.toString(peer.socketAddress);
+      this.logger.warn(`error while opening connection to peer (${id}): ${err.message}`);
+
+      if (err.code === errorCodes.CONNECTING_RETRIES_MAX_PERIOD_EXCEEDED) {
+        await this.nodes.removeAddress(nodePubKey!, peer.socketAddress);
+      }
+
+      throw err;
+    }
   }
 
   public closePeer = async (nodePubKey: string): Promise<void> => {
@@ -320,7 +329,7 @@ class Pool extends EventEmitter {
       }
       case PacketType.NODES: {
         const nodes = (packet as packets.NodesPacket).body!;
-        await this.connectNodes(nodes);
+        await this.connectNodes(nodes, false, false);
         break;
       }
       case PacketType.DEAL_REQUEST: {
@@ -517,14 +526,27 @@ class Pool extends EventEmitter {
       peer.sendPacket(new packets.GetOrdersPacket());
       peer.sendPacket(new packets.GetNodesPacket());
 
+      // updating the `lastConnected` field for the address we're actually connected to.
+      // if connection is inbound, then the port is discarded. This might result in multiple addresses getting updated
+      const addresses = peer.addresses!.map((address) => {
+        if (peer.socketAddress.host === address.host &&
+            peer.inbound ? true : peer.socketAddress.port === address.port
+        ) {
+          return { ...address, lastConnected: Date.now() };
+        } else {
+          return address;
+        }
+      });
+
+      // upserting the node entry
       if (!this.nodes.has(peer.nodePubKey!)) {
         await this.nodes.createNode({
+          addresses,
           nodePubKey: peer.nodePubKey!,
-          addresses: peer.addresses!,
         });
       } else {
         // the node is known, update its listening addresses
-        await this.nodes.updateAddresses(peer.nodePubKey!, peer.addresses);
+        await this.nodes.updateAddresses(peer.nodePubKey!, addresses);
       }
     }
   }

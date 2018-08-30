@@ -132,6 +132,8 @@ class Peer extends EventEmitter {
   public open = async (handshakeData: HandshakeState, nodePubKey?: string, retryConnecting?: boolean): Promise<void> => {
     assert(!this.opened);
     assert(!this.closed);
+    assert(this.inbound || nodePubKey);
+    assert(!retryConnecting || !this.inbound);
 
     this.opened = true;
 
@@ -246,6 +248,7 @@ class Peer extends EventEmitter {
     }
 
     return new Promise((resolve, reject) => {
+      const address: Address = { port: this.socketAddress.port, host: this.socketAddress.host };
       const startTime = Date.now();
       let retryDelay = Peer.CONNECTION_RETRIES_MIN_DELAY;
       let retries = 0;
@@ -282,8 +285,7 @@ class Peer extends EventEmitter {
 
         if (Date.now() - startTime + retryDelay > Peer.CONNECTION_RETRIES_MAX_PERIOD) {
           this.close();
-          reject(new Error(`${retries} connection retries failed`));
-          this.emit('ban');
+          reject(errors.CONNECTING_RETRIES_MAX_PERIOD_EXCEEDED);
           return;
         }
 
@@ -295,7 +297,7 @@ class Peer extends EventEmitter {
         setTimeout(() => {
           retryDelay = Math.min(Peer.CONNECTION_RETRIES_MAX_DELAY, retryDelay * 2);
           retries = retries + 1;
-          this.socket!.connect({ port: this.socketAddress.port, host: this.socketAddress.host });
+          this.socket!.connect(address);
           bind();
         }, retryDelay);
       };
