@@ -1,4 +1,3 @@
-import assert from 'assert';
 import net, { Server, Socket } from 'net';
 import { EventEmitter } from 'events';
 import errors, { errorCodes } from './errors';
