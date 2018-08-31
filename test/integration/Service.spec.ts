@@ -68,8 +68,7 @@ describe('API Service', () => {
     };
     const cancelOrderPromise = service.cancelOrder(args);
     expect(cancelOrderPromise).to.be.fulfilled;
-    const canceledOrder = await cancelOrderPromise;
-    expect(canceledOrder.canceled).to.be.true;
+    await cancelOrderPromise;
   });
 
   it('should shutdown', async () => {

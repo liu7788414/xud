@@ -67,43 +67,43 @@ describe('P2P Sanity Tests', () => {
   });
 
   it('should connect successfully', async () => {
-    const result = await nodeOne.service.connect({ nodeUri: nodeTwoUri });
-    expect(result).to.be.equal(`Connected to peer ${nodeTwo.nodePubKey}`);
+    await nodeOne.service.connect({ nodeUri: nodeTwoUri });
     const listPeersResult = await nodeOne.service.listPeers();
     expect(listPeersResult.length).to.equal(1);
+    expect(listPeersResult[0].nodePubKey).to.be.equal(nodeTwo.nodePubKey);
   });
 
   it('should fail connecting to the same node', async () => {
-    expect(nodeOne.service.connect({ nodeUri: nodeTwoUri }))
+    await expect(nodeOne.service.connect({ nodeUri: nodeTwoUri }))
     .to.be.rejectedWith('already connected');
   });
 
   it('should disconnect successfully', async () => {
     const result = await nodeOne.service.disconnect({ nodePubKey: nodeTwo.nodePubKey });
-    expect(result).to.be.equal(`success`);
     const listPeersResult = await nodeOne.service.listPeers();
     expect(listPeersResult.length).to.equal(0);
   });
 
   it('should fail when connecting to an unexpected node pub key', async () => {
-    const result = await nodeOne.service.connect({ nodeUri: getUri({
+    const connectPromise = nodeOne.service.connect({ nodeUri: getUri({
       nodePubKey: 'thewrongpubkey',
       host: 'localhost',
       port: nodeTwoConfig.p2p.port,
     }) });
-    expect(result).to.be.equal('Not connected');
+    await expect(connectPromise).to.be.rejectedWith(
+      `node at localhost:${nodeTwoConfig.p2p.port} sent pub key ${nodeTwo.nodePubKey}, expected thewrongpubkey`);
     const listPeersResult = await nodeOne.service.listPeers();
     expect(listPeersResult.length).to.equal(0);
   });
 
   it('should fail when connecting to self', async () => {
-    expect(nodeOne.service.connect({ nodeUri: nodeOneUri }))
-    .to.be.rejectedWith('Cannot attempt connection to self');
+    await expect(nodeOne.service.connect({ nodeUri: nodeOneUri }))
+    .to.be.rejectedWith('cannot attempt connection to self');
   });
 
   it('should fail connecting to a non-existing node', async () => {
-    const result = await nodeOne.service.connect({ nodeUri: getUri({ nodePubKey: 'notarealnodepubkey', host: 'localhost', port: 9003 }) });
-    expect(result).to.be.equal('Not connected');
+    const connectPromise = nodeOne.service.connect({ nodeUri: getUri({ nodePubKey: 'notarealnodepubkey', host: 'localhost', port: 9003 }) });
+    await expect(connectPromise).to.be.rejectedWith('could not connect to peer at localhost:9003');
   });
 
   after(async () => {
