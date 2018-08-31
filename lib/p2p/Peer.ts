@@ -7,9 +7,10 @@ import Logger from '../Logger';
 import { ms } from '../utils/utils';
 import { OutgoingOrder } from '../types/orders';
 import { Packet, PacketDirection, PacketType } from './packets';
-import { HandshakeState, Address, NodeConnectionInfo } from '../types/p2p';
+import { HandshakeState, NodeConnectionInfo } from '../types/p2p';
 import errors from './errors';
 import addressUtils from '../utils/addressUtils';
+import { XudError, Address } from '../types/global';
 
 /** Key info about a peer for display purposes */
 type PeerInfo = {
@@ -43,6 +44,8 @@ class Peer extends EventEmitter {
   public socketAddress!: Address;
   public inbound!: boolean;
   public connected = false;
+  /** The error for why this peer was unable to connect or initialize beyond the handshake state, if applicable. */
+  public error?: XudError;
   private opened = false;
   private socket?: Socket;
   private parser: Parser = new Parser(Packet.PROTOCOL_DELIMITER);
@@ -137,10 +140,12 @@ class Peer extends EventEmitter {
     if (nodePubKey) {
       if (this.nodePubKey !== nodePubKey) {
         this.close();
-        throw errors.UNEXPECTED_NODE_PUB_KEY(this.nodePubKey!, nodePubKey, addressUtils.toString(this.socketAddress));
+        this.error = errors.UNEXPECTED_NODE_PUB_KEY(this.nodePubKey!, nodePubKey, addressUtils.toString(this.socketAddress));
+        throw this.error;
       } else if (this.nodePubKey === handshakeData.nodePubKey) {
         this.close();
-        throw errors.ATTEMPTED_CONNECTION_TO_SELF;
+        this.error = errors.ATTEMPTED_CONNECTION_TO_SELF;
+        throw this.error;
       }
     }
 
@@ -258,7 +263,8 @@ class Peer extends EventEmitter {
 
       const onError = (err: Error) => {
         cleanup();
-        reject(err);
+        this.error = errors.COULD_NOT_CONNECT(this.socketAddress, err);
+        reject(this.error);
       };
 
       const onConnect = () => {
@@ -273,7 +279,8 @@ class Peer extends EventEmitter {
 
       const onTimeout = () => {
         cleanup();
-        reject(new Error('Connection timed out.'));
+        this.error = errors.CONNECTION_TIMED_OUT(this.socketAddress);
+        reject(this.error);
       };
 
       this.socket!.once('connect', onConnect);
@@ -329,7 +336,7 @@ class Peer extends EventEmitter {
 
     for (const [packetType, entry] of this.responseMap) {
       if (now > entry.timeout) {
-        this.error(`Peer (${this.nodePubKey}) is stalling (${packetType})`);
+        this.emitError(`Peer (${this.nodePubKey}) is stalling (${packetType})`);
         this.close();
         return;
       }
@@ -419,7 +426,7 @@ class Peer extends EventEmitter {
         return;
       }
 
-      this.error(err);
+      this.emitError(err);
       // socket close event will be called immediately after the socket error
     });
 
@@ -508,7 +515,7 @@ class Peer extends EventEmitter {
     }
   }
 
-  private error = (err: Error | string): void => {
+  private emitError = (err: Error | string): void => {
     if (this.closed) {
       return;
     }

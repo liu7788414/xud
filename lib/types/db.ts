@@ -1,5 +1,5 @@
 import Sequelize, { DataTypeAbstract, DefineAttributeColumnOptions } from 'sequelize';
-import { Address } from './p2p';
+import { Address } from './global';
 
 export type SequelizeAttributes<T extends { [key: string]: any }> = {
   [P in keyof T]: string | DataTypeAbstract | DefineAttributeColumnOptions

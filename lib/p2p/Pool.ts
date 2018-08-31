@@ -10,10 +10,11 @@ import { Packet, PacketType } from './packets';
 import { OutgoingOrder, OrderIdentifier, StampedPeerOrder } from '../types/orders';
 import { Models } from '../db/DB';
 import Logger from '../Logger';
-import { HandshakeState, Address, NodeConnectionInfo } from '../types/p2p';
+import { HandshakeState, NodeConnectionInfo } from '../types/p2p';
 import addressUtils from '../utils/addressUtils';
 import { getExternalIp } from '../utils/utils';
 import assert from 'assert';
+import { Address } from '../types/global';
 
 type PoolConfig = {
   listen: boolean;
@@ -206,7 +207,7 @@ class Pool extends EventEmitter {
       this.logger.warn(err.message);
       throw err;
     } else if (this.peers.has(nodePubKey)) {
-      const err = errors.NODE_ALREADY_CONNECTED(nodePubKey, address.host);
+      const err = errors.NODE_ALREADY_CONNECTED(nodePubKey, address);
       throw err;
     }
 

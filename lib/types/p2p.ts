@@ -1,7 +1,4 @@
-export type Address = {
-  host: string;
-  port: number;
-};
+import { Address } from './global';
 
 /** Information used for connecting to a remote node. */
 export type NodeConnectionInfo = {

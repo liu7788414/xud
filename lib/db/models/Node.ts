@@ -1,6 +1,6 @@
 import Sequelize from 'sequelize';
 import { db } from '../../types';
-import { Address } from '../../types/p2p';
+import { Address } from '../../types/global';
 
 export default (sequelize: Sequelize.Sequelize, DataTypes: Sequelize.DataTypes) => {
   const attributes: db.SequelizeAttributes<db.NodeAttributes> = {

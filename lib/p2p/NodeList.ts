@@ -1,6 +1,6 @@
 import P2PRepository from './P2PRepository';
 import { NodeInstance, NodeFactory } from '../types/db';
-import { NodeConnectionInfo, Address } from '../types/p2p';
+import { Address } from '../types/global';
 
 /** Represents a list of nodes for managing network peers activity */
 class NodeList {

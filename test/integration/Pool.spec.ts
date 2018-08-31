@@ -6,7 +6,7 @@ import DB from '../../lib/db/DB';
 import Config from '../../lib/Config';
 import NodeKey from '../../lib/nodekey/NodeKey';
 import Peer from '../../lib/p2p/Peer';
-import { Address } from '../../lib/types/p2p';
+import { Address } from '../../lib/types/global';
 
 chai.use(chaiAsPromised);
 
