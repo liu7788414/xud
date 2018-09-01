@@ -4,7 +4,6 @@
 /* tslint:disable */
 
 import * as jspb from "google-protobuf";
-import * as annotations_pb from "./annotations_pb";
 
 export class ChannelBalanceRequest extends jspb.Message { 
     getCurrency(): string;

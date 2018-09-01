@@ -25,7 +25,7 @@ class Config {
 
   constructor() {
     const platform = os.platform();
-    let lndDefaultDatadir;
+    let lndDefaultDatadir: string;
     switch (platform) {
       case 'win32': { // windows
         const homeDir = process.env.LOCALAPPDATA;
@@ -46,6 +46,8 @@ class Config {
         break;
       }
     }
+
+    const macaroon = 'admin.macaroon';
 
     // default configuration
     this.initDb = true;
@@ -77,14 +79,14 @@ class Config {
     this.lndbtc = {
       disable: false,
       certpath: path.join(lndDefaultDatadir, 'tls.cert'),
-      macaroonpath: path.join(lndDefaultDatadir, 'admin.macaroon'),
+      macaroonpath: path.join(lndDefaultDatadir, this.getMacaroonPath('bitcoin', 'testnet', macaroon)),
       host: 'localhost',
       port: 10009,
     };
     this.lndltc = {
       disable: false,
       certpath: path.join(lndDefaultDatadir, 'tls.cert'),
-      macaroonpath: path.join(lndDefaultDatadir, 'admin.macaroon'),
+      macaroonpath: path.join(lndDefaultDatadir, this.getMacaroonPath('litecoin', 'testnet', macaroon)),
       host: 'localhost',
       port: 10010,
     };
@@ -125,6 +127,10 @@ class Config {
     }
 
     return this;
+  }
+
+  private getMacaroonPath = (chain: string, network: string, macaroon: string): string => {
+    return path.join('data', 'chain', chain, network, macaroon);
   }
 
   private getDefaultLogLevel = (): string => {

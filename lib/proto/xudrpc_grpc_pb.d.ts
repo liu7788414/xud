@@ -5,7 +5,6 @@
 
 import * as grpc from "grpc";
 import * as xudrpc_pb from "./xudrpc_pb";
-import * as annotations_pb from "./annotations_pb";
 
 interface IXudService extends grpc.ServiceDefinition<grpc.UntypedServiceImplementation> {
     cancelOrder: IXudService_ICancelOrder;
