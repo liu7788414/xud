@@ -1,3 +1,5 @@
+import { NetworkClients } from './enums';
+
 type MarketOrder = {
   /** The number of base currency tokens for the order. */
   quantity: number;
@@ -45,6 +47,24 @@ export type OrderIdentifier = {
   orderId: string;
   pairId: string;
   quantity?: number;
+};
+
+export type Currency = {
+  /** The ticker symbol for this currency such as BTC, LTC, ETH, etc... */
+  id: string;
+  /* The payment channel network client to use for executing swaps. */
+  networkClient: NetworkClients;
+  /** The contract address for layered tokens such as ERC20. */
+  tokenAddress?: string;
+  /** The number of subunits (e.g. satoshis) per unit (e.g. bitcoin), if different from the 100000000:1 ratio used by BTC, LTC, and others. */
+  subunits?: number;
+};
+
+export type Pair = {
+  /* The base currency that is bought and sold for this trading pair. */
+  baseCurrency: string;
+  /* The currency used to quote a price for the base currency. */
+  quoteCurrency: string;
 };
 
 export function isOwnOrder(order: StampedOrder): order is StampedOwnOrder {

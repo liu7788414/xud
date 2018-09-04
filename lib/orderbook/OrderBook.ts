@@ -9,9 +9,12 @@ import Peer from '../p2p/Peer';
 import { orders, matchingEngine, db } from '../types';
 import Logger from '../Logger';
 import LndClient from '../lndclient/LndClient';
-import { ms } from '../utils/utils';
+import { ms, derivePairId } from '../utils/utils';
 import { Models } from '../db/DB';
 import RaidenClient from '../raidenclient/RaidenClient';
+import { CurrencyInstance, PairInstance, CurrencyFactory } from '../types/db';
+import { Pair } from '../types/orders';
+import { NetworkClients } from '../types/enums';
 
 /** A mapping of strings (such as pair ids) to [[Orders]] objects. */
 type OrdersMap = Map<string, Orders>;
@@ -37,10 +40,10 @@ type OrderArrays = {
 
 /** A class representing an orderbook containing all orders for all active trading pairs. */
 class OrderBook extends EventEmitter {
-  /** An array of supported pair instances for the orderbook. */
-  public pairs: db.PairInstance[] = [];
-  /** An array of supported pair ids for the orderbook. */
-  public pairIds: string[] = [];
+  /** A map of supported currency tickers to currency instances. */
+  public currencies = new Map<string, CurrencyInstance>();
+  /** A map of supported trading pair tickers to pair instances. */
+  public pairs = new Map<string, PairInstance>();
 
   /** A map between active trading pair ids and matching engines. */
   public matchingEngines = new Map<string, MatchingEngine>();
@@ -54,6 +57,11 @@ class OrderBook extends EventEmitter {
 
   /** A map between an order's local id and its global id. */
   private localIdMap: Map<string, string> = new Map<string, string>();
+
+  /** Gets an iterable of supported pair ids. */
+  public get pairIds() {
+    return this.pairs.keys();
+  }
 
   constructor(private logger: Logger, models: Models, private pool?: Pool, private lndClient?: LndClient, private raidenClient?: RaidenClient) {
     super();
@@ -86,14 +94,21 @@ class OrderBook extends EventEmitter {
     }
   }
 
+  /** Loads the supported pairs and currencies from the database. */
   public init = async () => {
-    this.pairs = await this.repository.getPairs();
+    const promises = [await this.repository.getPairs(), await this.repository.getCurrencies()];
+    const results = await Promise.all(promises);
+    const pairs = results[0] as db.PairInstance[];
+    const currencies = results[1] as db.CurrencyInstance[];
 
-    this.pairs.forEach((pair) => {
-      this.pairIds.push(pair.id);
+    pairs.forEach((pair) => {
       this.matchingEngines.set(pair.id, new MatchingEngine(this.logger, pair.id));
       this.ownOrders.set(pair.id, this.initOrders());
       this.peerOrders.set(pair.id, this.initOrders());
+      this.pairs.set(pair.id, pair);
+    });
+    currencies.forEach((currency) => {
+      this.currencies.set(currency.id, currency);
     });
   }
 
@@ -121,7 +136,7 @@ class OrderBook extends EventEmitter {
   private getOrders = (pairId: string, maxResults: number, ordersMap: OrdersMap): OrderArrays => {
     const orders = ordersMap.get(pairId);
     if (!orders) {
-      throw errors.INVALID_PAIR_ID(pairId);
+      throw errors.UNSUPPORTED_PAIR_ID(pairId);
     }
     if (maxResults > 0) {
       return {
@@ -133,6 +148,56 @@ class OrderBook extends EventEmitter {
         buyOrders: Array.from(orders.buyOrders.values()),
         sellOrders: Array.from(orders.sellOrders.values()),
       };
+    }
+  }
+
+  public addPair = async (pair: Pair) => {
+    const pairId = derivePairId(pair);
+    if (this.pairs.has(pairId)) {
+      throw errors.PAIR_ALREADY_SUPPORTED(pairId);
+    }
+    if (!this.currencies.has(pair.baseCurrency)) {
+      throw errors.UNSUPPORTED_CURRENCY(pair.baseCurrency);
+    }
+    if (!this.currencies.has(pair.quoteCurrency)) {
+      throw errors.UNSUPPORTED_CURRENCY(pair.quoteCurrency);
+    }
+
+    const pairInstance = await this.repository.addPair(pair);
+    this.pairs.set(pairInstance.id, pairInstance);
+    return pairInstance;
+  }
+
+  public addCurrency = async (currency: CurrencyFactory) => {
+    if (this.currencies.has(currency.id)) {
+      throw errors.CURRENCY_ALREADY_SUPPORTED(currency.id);
+    }
+    const currencyInstance = await this.repository.addCurrency(currency);
+    this.currencies.set(currencyInstance.id, currencyInstance);
+  }
+
+  public removeCurrency = (currencyId: string) => {
+    const currency = this.currencies.get(currencyId);
+    if (currency) {
+      for (const pairId of this.pairIds) {
+        if (pairId.includes(currencyId)) {
+          throw errors.CURRENCY_CANNOT_BE_REMOVED(currencyId, pairId);
+        }
+      }
+      this.currencies.delete(currencyId);
+      return currency.destroy();
+    } else {
+      throw errors.UNSUPPORTED_CURRENCY(currencyId);
+    }
+  }
+
+  public removePair = (pairId: string) => {
+    const pair = this.pairs.get(pairId);
+    if (pair) {
+      this.pairs.delete(pairId);
+      return pair.destroy();
+    } else {
+      throw errors.UNSUPPORTED_PAIR_ID(pairId);
     }
   }
 
@@ -214,7 +279,7 @@ class OrderBook extends EventEmitter {
 
     const matchingEngine = this.matchingEngines.get(order.pairId);
     if (!matchingEngine) {
-      throw errors.INVALID_PAIR_ID(order.pairId);
+      throw errors.UNSUPPORTED_PAIR_ID(order.pairId);
     }
 
     const stampedOrder: orders.StampedOwnOrder = { ...order, id: uuidv1(), createdAt: ms() };
@@ -318,8 +383,8 @@ class OrderBook extends EventEmitter {
   }
 
   private removeOrder = (ordersMap: OrdersMap, orderId: string, pairId: string): boolean => {
-    if (!this.pairIds.includes(pairId)) {
-      throw errors.INVALID_PAIR_ID(pairId);
+    if (!this.pairs.has(pairId)) {
+      throw errors.UNSUPPORTED_PAIR_ID(pairId);
     }
     const orders = ordersMap.get(pairId);
 
@@ -339,7 +404,7 @@ class OrderBook extends EventEmitter {
   private getOrderMap = (ordersMap: OrdersMap, order: orders.StampedOrder): Map<string, orders.StampedOrder> => {
     const orders = ordersMap.get(order.pairId);
     if (!orders) {
-      throw errors.INVALID_PAIR_ID(order.pairId);
+      throw errors.UNSUPPORTED_PAIR_ID(order.pairId);
     }
     if (order.quantity > 0) {
       return orders.buyOrders;
@@ -360,11 +425,12 @@ class OrderBook extends EventEmitter {
     // TODO: just send supported pairs
 
     const outgoingOrders: orders.OutgoingOrder[] = [];
-    this.pairIds.forEach((pairId) => {
+    for (const pairId of this.pairs.keys()) {
       const orders = this.getOwnOrders(pairId, 0);
       orders['buyOrders'].forEach(order => outgoingOrders.push(this.createOutgoingOrder(order as orders.StampedOwnOrder)));
       orders['sellOrders'].forEach(order => outgoingOrders.push(this.createOutgoingOrder(order as orders.StampedOwnOrder)));
-    });
+    }
+
     peer.sendOrders(outgoingOrders, reqId);
   }
 

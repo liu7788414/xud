@@ -1,5 +1,6 @@
 import Sequelize, { DataTypeAbstract, DefineAttributeColumnOptions } from 'sequelize';
-import { Address } from './p2p';
+import { Address, NodeConnectionInfo } from './p2p';
+import { Currency, Pair } from './orders';
 
 export type SequelizeAttributes<T extends { [key: string]: any }> = {
   [P in keyof T]: string | DataTypeAbstract | DefineAttributeColumnOptions
@@ -15,21 +16,16 @@ export type SequelizeAttributes<T extends { [key: string]: any }> = {
 * "xInstance" is the type definition of a fetched record as a Sequelize row instance, which contains some util properties.
 */
 
-export type CurrencyFactory = {
-  id: string;
-  tokenAddress?: string;
-};
+export type CurrencyFactory = Currency;
 
 export type CurrencyAttributes = CurrencyFactory & {
   tokenAddress: string;
+  subunits: number;
 };
 
 export type CurrencyInstance = CurrencyAttributes & Sequelize.Instance<CurrencyAttributes>;
 
-export type NodeFactory = {
-  nodePubKey: string;
-  addresses: Address[];
-};
+export type NodeFactory = NodeConnectionInfo;
 
 export type NodeAttributes = NodeFactory & {
   id: number;
@@ -39,11 +35,7 @@ export type NodeAttributes = NodeFactory & {
 
 export type NodeInstance = NodeAttributes & Sequelize.Instance<NodeAttributes>;
 
-export type PairFactory = {
-  baseCurrency: string;
-  quoteCurrency: string;
-  swapProtocol: string;
-};
+export type PairFactory = Pair;
 
 export type PairAttributes = PairFactory & {
   id: string;

@@ -2,6 +2,7 @@ import chai, { expect } from 'chai';
 import Xud from '../../lib/Xud';
 import chaiAsPromised from 'chai-as-promised';
 import Service from '../../lib/service/Service';
+import { NetworkClients } from '../../lib/types/enums';
 
 chai.use(chaiAsPromised);
 
@@ -69,6 +70,67 @@ describe('API Service', () => {
     expect(cancelOrderPromise).to.be.fulfilled;
     const canceledOrder = await cancelOrderPromise;
     expect(canceledOrder.canceled).to.be.true;
+  });
+
+  it('should add two currencies', async () => {
+    const addCurrencyPromises = [service.addCurrency({ currency: 'ABC', networkClient: NetworkClients.LND }),
+      service.addCurrency({ currency: 'XYZ', networkClient: NetworkClients.LND })];
+    await expect(Promise.all(addCurrencyPromises)).to.be.fulfilled;
+  });
+
+  it('should add a trading pair', async () => {
+    const addPairPromise = service.addPair({
+      baseCurrency: 'ABC',
+      quoteCurrency: 'XYZ',
+    });
+    await expect(addPairPromise).to.be.fulfilled;
+  });
+
+  it('should fail adding a currency with a ticker that is not 3 characters long', async () => {
+    const tooLongAddCurrencyPromise = service.addCurrency({ currency: 'GOOG', networkClient: NetworkClients.LND });
+    await expect(tooLongAddCurrencyPromise).to.be.rejectedWith('currency must consist of exactly 3 upper case English letters');
+  });
+
+  it('should fail adding a currency with an invalid letter in its ticker', async () => {
+    const invalidLetterAddCurrencyPromise = service.addCurrency({ currency: 'ÑEO', networkClient: NetworkClients.LND });
+    await expect(invalidLetterAddCurrencyPromise).to.be.rejectedWith('currency must consist of exactly 3 upper case English letters');
+  });
+
+  it('should fail adding a currency with an invalid network client', async () => {
+    const addCurrencyPromise = service.addCurrency({ currency: 'BTC', networkClient: -1 });
+    await expect(addCurrencyPromise).to.be.rejectedWith('network client is not recognized');
+  });
+
+  it('should fail adding a currency that is already supported', async () => {
+    const addCurrencyPromise = service.addCurrency({ currency: 'ABC', networkClient: NetworkClients.LND });
+    await expect(addCurrencyPromise).to.be.rejectedWith('currency ABC is already supported');
+  });
+
+  it('should fail adding a pair that is already supported', async () => {
+    const addPairPromise = service.addPair({
+      baseCurrency: 'ABC',
+      quoteCurrency: 'XYZ',
+    });
+    await expect(addPairPromise).to.be.rejectedWith('pair ABC/XYZ is already supported');
+  });
+
+  it('should fail adding a pair with a currency that is not supported', async () => {
+    const addCurrencyPromise = service.addPair({ baseCurrency: 'XXX', quoteCurrency: 'ABC' });
+    await expect(addCurrencyPromise).to.be.rejectedWith('currency XXX is not supported');
+  });
+
+  it('should fail removing a currency used in a supported trading pair', async () => {
+    const removeCurrencyPromise = service.removeCurrency({ currency: 'ABC' });
+    await expect(removeCurrencyPromise).to.be.rejectedWith('cannot be removed because it is used for');
+  });
+
+  it('should remove a trading pair', async () => {
+    await expect(service.removePair({ pairId: 'ABC/XYZ' })).to.be.fulfilled;
+  });
+
+  it('should remove two currencies', async () => {
+    const removeCurrencyPromises = [service.removeCurrency({ currency: 'ABC' }), service.removeCurrency({ currency: 'XYZ' })];
+    await expect(Promise.all(removeCurrencyPromises)).to.be.fulfilled;
   });
 
   it('should shutdown', async () => {

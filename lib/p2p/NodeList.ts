@@ -31,7 +31,7 @@ class NodeList {
     const node = this.nodes.get(nodePubKey);
     if (node) {
       node.banned = true;
-      await this.repository.updateNode(node);
+      await node.save();
       return true;
     }
     return false;
@@ -70,7 +70,7 @@ class NodeList {
     const node = this.nodes.get(nodePubKey);
     if (node) {
       node.addresses = addresses;
-      await this.repository.updateNode(node);
+      await node.save();
       return true;
     }
 
