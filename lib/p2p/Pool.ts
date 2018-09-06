@@ -190,7 +190,7 @@ class Pool extends EventEmitter {
     const sortedAddresses = [...addresses].sort((a, b) => {
       if (!a.lastConnected) return 1;
       if (!b.lastConnected) return -1;
-      return b.lastConnected - a.lastConnected
+      return b.lastConnected - a.lastConnected;
     });
 
     for (const address of sortedAddresses) {
