@@ -163,20 +163,19 @@ class Pool extends EventEmitter {
    */
   private tryConnectNode = async (node: NodeInstance | NodeConnectionInfo, retryConnecting?: boolean) => {
     const { addresses, nodePubKey } = node;
-    for (let n = 0; n < addresses.length; n += 1) {
+    const sortedAddresses = addresses.sort((a, b) => b.lastConnected! - a.lastConnected!); // order by lastConnected desc
+
+    for (const address of sortedAddresses) {
       try {
-        await this.addOutbound(addresses[n], nodePubKey, false);
+        await this.addOutbound(address, nodePubKey, false);
         return; // once we've successfully established an outbound connection, stop attempting new connections
       } catch (err) {}
     }
 
-    if (retryConnecting) {
-      const index = addressUtils.getLatestConnectedAddressIndex(addresses);
-      if (index > -1) {
-        try {
-          await this.addOutbound(addresses[index], nodePubKey, true);
-        } catch (err) {}
-      }
+    if (retryConnecting && sortedAddresses.length && sortedAddresses[0].lastConnected) {
+      try {
+        await this.addOutbound(sortedAddresses[0], nodePubKey, true);
+      } catch (err) {}
     }
   }
 

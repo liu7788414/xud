@@ -29,21 +29,6 @@ const addressUtils = {
 
   /** Convert an [[Address]] to a string in the "{host}:{port}" format. */
   toString: (address: Address) => `${address.host}:${address.port}`,
-
-  /** Get latest connected address index from an array of addresses */
-  getLatestConnectedAddressIndex: (addresses: Address[]): number  => {
-    let latestConnected = 0;
-    let latestConnectedIndex = -1;
-    addresses.forEach((address, i) => {
-      const { lastConnected } = address;
-      if (lastConnected && lastConnected > latestConnected) {
-        latestConnected = lastConnected;
-        latestConnectedIndex = i;
-      }
-    });
-
-    return latestConnectedIndex;
-  },
 };
 
 export default addressUtils;
