@@ -249,7 +249,7 @@ class Peer extends EventEmitter {
       assert(this.inbound);
       this.connectTime = Date.now();
       this.logger.debug(this.getStatus());
-      return;
+      return Promise.resolve();
     }
 
     return new Promise((resolve, reject) => {

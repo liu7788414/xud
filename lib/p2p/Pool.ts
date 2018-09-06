@@ -185,7 +185,13 @@ class Pool extends EventEmitter {
    */
   private tryConnectNode = async (node: NodeInstance | NodeConnectionInfo, retryConnecting?: boolean) => {
     const { addresses, nodePubKey } = node;
-    const sortedAddresses = addresses.sort((a, b) => b.lastConnected! - a.lastConnected!); // order by lastConnected desc
+
+    // sort by lastConnected desc
+    const sortedAddresses = [...addresses].sort((a, b) => {
+      if (!a.lastConnected) return 1;
+      if (!b.lastConnected) return -1;
+      return b.lastConnected - a.lastConnected
+    });
 
     for (const address of sortedAddresses) {
       try {
