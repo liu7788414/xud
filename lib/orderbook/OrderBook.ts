@@ -12,6 +12,7 @@ import LndClient from '../lndclient/LndClient';
 import { ms } from '../utils/utils';
 import { Models } from '../db/DB';
 import RaidenClient from '../raidenclient/RaidenClient';
+import Swaps from '../swaps/Swaps';
 
 /** A mapping of strings (such as pair ids) to [[Orders]] objects. */
 type OrdersMap = Map<string, Orders>;
@@ -55,10 +56,10 @@ class OrderBook extends EventEmitter {
   /** A map between an order's local id and its global id. */
   private localIdMap: Map<string, string> = new Map<string, string>();
 
-  constructor(private logger: Logger, models: Models, private pool?: Pool, private lndClient?: LndClient, private raidenClient?: RaidenClient) {
+  constructor(private logger: Logger, models: Models, private pool?: Pool, private swaps?: Swaps) {
     super();
 
-    this.matchesProcessor = new MatchesProcessor(logger, pool, raidenClient);
+    this.matchesProcessor = new MatchesProcessor(logger, pool, swaps);
 
     this.repository = new OrderBookRepository(logger, models);
     if (pool) {
@@ -66,10 +67,6 @@ class OrderBook extends EventEmitter {
       pool.on('packet.orderInvalidation', order => this.removePeerOrder(order.orderId, order.pairId, order.quantity));
       pool.on('packet.getOrders', this.sendOrders);
       pool.on('peer.close', this.removePeerOrders);
-    }
-
-    if (raidenClient) {
-      raidenClient.on('swap', this.swapHandler);
     }
   }
 
@@ -205,7 +202,10 @@ class OrderBook extends EventEmitter {
   }
 
   private addOwnOrder = (order: orders.OwnOrder, discardRemaining = false): matchingEngine.MatchingResult => {
-    if (this.localIdMap.has(order.localId)) {
+    if (order.localId === '') {
+      // we were given a blank local id, so generate one
+      order.localId = uuidv1();
+    } else if (this.localIdMap.has(order.localId)) {
       throw errors.DUPLICATE_ORDER(order.localId);
     }
 
@@ -315,17 +315,19 @@ class OrderBook extends EventEmitter {
   }
 
   private removeOrder = (ordersMap: OrdersMap, orderId: string, pairId: string): boolean => {
-    const orders = ordersMap.get(pairId);
-
-    if (!orders) {
+    if (!this.pairIds.includes(pairId)) {
       throw errors.INVALID_PAIR_ID(pairId);
     }
-    if (orders.buyOrders.has(orderId)) {
-      orders.buyOrders.delete(orderId);
-      return true;
-    } else if (orders.sellOrders.has(orderId)) {
-      orders.sellOrders.delete(orderId);
-      return true;
+    const orders = ordersMap.get(pairId);
+
+    if (orders) {
+      if (orders.buyOrders.has(orderId)) {
+        orders.buyOrders.delete(orderId);
+        return true;
+      } else if (orders.sellOrders.has(orderId)) {
+        orders.sellOrders.delete(orderId);
+        return true;
+      }
     }
 
     return false;

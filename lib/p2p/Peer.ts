@@ -142,9 +142,14 @@ class Peer extends EventEmitter {
     await this.initHello(handshakeData);
 
     // TODO: Check that the peer's version is compatible with ours
-    if (nodePubKey && this.nodePubKey !== nodePubKey) {
-      this.close();
-      throw errors.UNEXPECTED_NODE_PUB_KEY(this.nodePubKey!, nodePubKey, addressUtils.toString(this.socketAddress));
+    if (nodePubKey) {
+      if (this.nodePubKey !== nodePubKey) {
+        this.close();
+        throw errors.UNEXPECTED_NODE_PUB_KEY(this.nodePubKey!, nodePubKey, addressUtils.toString(this.socketAddress));
+      } else if (this.nodePubKey === handshakeData.nodePubKey) {
+        this.close();
+        throw errors.ATTEMPTED_CONNECTION_TO_SELF;
+      }
     }
 
     this.finalizeOpen();
@@ -244,7 +249,7 @@ class Peer extends EventEmitter {
       assert(this.inbound);
       this.connectTime = Date.now();
       this.logger.debug(this.getStatus());
-      return Promise.resolve();
+      return;
     }
 
     return new Promise((resolve, reject) => {
